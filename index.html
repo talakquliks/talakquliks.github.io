@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학번, 이름, 전화번호 제출 기록 (멀티 관리자 전용)</title>
+    <title>1-2 오락실 키오스크</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -13,6 +13,11 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .spinner { border-top-color: #3b82f6; animation: spin 1s ease-in-out infinite; }
         .admin-record { background-color: #fef2f2; border-left-color: #ef4444; } /* bg-red-50, border-red-500 */
+        /* 관리자 키 입력 모달 스타일 */
+        .admin-key-prompt { 
+            background: linear-gradient(to right, #4c51bf, #6b46c1); /* indigo-700 to purple-700 */
+            color: white;
+        }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8 flex flex-col items-center">
@@ -53,23 +58,36 @@
         </form>
         <div id="message-box" class="mt-4 p-3 rounded-lg text-sm hidden"></div>
     </div>
+
+    <!-- 제출 기록 영역 -->
     <div class="w-full max-w-4xl bg-white p-6 md:p-8 rounded-xl container-card">
         <h2 id="record-title" class="text-2xl font-bold text-gray-800 mb-4 pb-2 border-b">제출 기록</h2>
+        
+        <!-- 로딩 인디케이터 -->
         <div id="loading-indicator" class="flex justify-center items-center py-10">
             <div class="spinner w-8 h-8 border-4 rounded-full"></div>
             <span class="ml-3 text-gray-600">데이터 로드 중...</span>
         </div>
+        
+        <!-- 관리자 키 입력 프롬프트 (관리자가 아닐 때 표시됨) -->
+        <div id="admin-key-section" class="admin-key-prompt p-6 rounded-lg hidden">
+            <p class="font-bold text-lg mb-3">전체 기록 열람을 위해 관리자 키를 입력해주세요.</p>
+            <div class="flex space-x-2">
+                <input type="password" id="adminKeyInput" placeholder="관리자 비밀 키" 
+                       class="flex-grow px-4 py-2 border border-gray-300 rounded-lg text-gray-800 focus:ring-yellow-400 focus:border-yellow-400">
+                <button id="activateAdminButton" 
+                        class="bg-yellow-400 text-indigo-900 font-bold py-2 px-4 rounded-lg hover:bg-yellow-300 transition duration-150">
+                    활성화
+                </button>
+            </div>
+            <p id="adminKeyMessage" class="text-sm mt-2 font-medium hidden text-red-200"></p>
+        </div>
+
         <ul id="submissions-list" class="space-y-3 hidden">
             <!-- 제출된 데이터가 여기에 표시됩니다. -->
         </ul>
         <div id="no-data-message" class="text-center text-gray-500 py-6 hidden">
             아직 제출된 기록이 없습니다.
-        </div>
-        <!-- 관리자 아닌 기기에 표시될 메시지 -->
-        <div id="non-admin-message" class="text-center text-gray-600 bg-gray-100 p-8 rounded-lg hidden">
-            <svg class="w-10 h-10 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-            <p class="font-bold text-lg">관리자 모드가 아닙니다.</p>
-            <p class="text-sm mt-1">이 기기는 데이터 제출만 가능하며, 전체 기록은 볼 수 없습니다.</p>
         </div>
     </div>
 
@@ -85,7 +103,7 @@
         setLogLevel('debug'); 
 
         // =========================================================
-        // ✅ 사용자님이 제공한 정확한 Firebase Config 값
+        // ✅ Firebase Config
         // =========================================================
         const firebaseConfig = {
             apiKey: "AIzaSyAflIQDD67yZV37XPnZmV_RI6DxPuLjb-A",          
@@ -99,35 +117,39 @@
         const appId = firebaseConfig.projectId; // keyos-cdd4d
         
         // =========================================================
-        // ✅ [다중 관리자] 모든 관리자 ID 목록입니다.
+        // ✅ [고정 관리자 키] 이 키를 관리자 확인에 사용합니다.
+        // 이 값을 변경하면 모든 관리자 기기에서 이 키를 사용해야 합니다.
         // =========================================================
-        const ADMIN_USER_IDS = [
-            "ZGJ06dwqc2f7HhHqvoeYQjUbgpH2", // 이전 ID
-            "Yb8pLFuVZChEsUw8Esu4V2sKmql1"  // 새로운 ID
-        ];
+        const ADMIN_SECRET_KEY = "96121965"; // 원하는 비밀번호로 변경하세요
         // =========================================================
         
         let db;
         let auth;
         let userId = null;
         let isAuthReady = false;
-        let isAdmin = false;
+        // isAdmin 상태는 이제 Firebase ID가 아닌, sessionStorage 또는 키 입력으로 결정됩니다.
+        let isAdmin = false; 
 
+        // DOM 요소
         const form = document.getElementById('submission-form');
-        const studentIdInput = document.getElementById('studentId');
-        const studentNameInput = document.getElementById('studentName');
-        const phoneNumberInput = document.getElementById('phoneNumber');
         const submitButton = document.getElementById('submit-button');
         const submissionsList = document.getElementById('submissions-list');
         const loadingIndicator = document.getElementById('loading-indicator');
         const noDataMessage = document.getElementById('no-data-message');
-        const messageBox = document.getElementById('message-box');
         const authInfoDiv = document.getElementById('auth-info');
         const errorDisplayDiv = document.getElementById('error-display');
         const errorMessageP = document.getElementById('error-message');
-        const nonAdminMessage = document.getElementById('non-admin-message');
         const recordTitle = document.getElementById('record-title');
-
+        
+        // Admin Key 요소
+        const adminKeySection = document.getElementById('admin-key-section');
+        const adminKeyInput = document.getElementById('adminKeyInput');
+        const activateAdminButton = document.getElementById('activateAdminButton');
+        const adminKeyMessage = document.getElementById('adminKeyMessage');
+        const studentIdInput = document.getElementById('studentId');
+        const studentNameInput = document.getElementById('studentName');
+        const phoneNumberInput = document.getElementById('phoneNumber');
+        const messageBox = document.getElementById('message-box');
 
         function displayMessage(message, isSuccess) {
             messageBox.textContent = message;
@@ -153,6 +175,11 @@
             errorMessageP.textContent = fullMessage;
         }
 
+        // 세션 스토리지에서 관리자 상태를 확인
+        function checkAdminStatus() {
+            return sessionStorage.getItem('isAdminAccess') === 'true';
+        }
+
         // Firebase 초기화 및 인증 설정
         try {
             const app = initializeApp(firebaseConfig);
@@ -166,13 +193,13 @@
                     submitButton.disabled = false;
                     errorDisplayDiv.classList.add('hidden');
                     
-                    // 관리자 ID 목록에 현재 사용자 ID가 포함되는지 체크
-                    isAdmin = ADMIN_USER_IDS.includes(userId);
-                    
+                    // 관리자 상태 업데이트: sessionStorage 확인
+                    isAdmin = checkAdminStatus();
+
                     authInfoDiv.innerHTML = `
                         현재 사용자 ID (User ID): <span class="font-mono text-blue-600">${userId}</span> 
                         - <span class="text-green-600">익명 로그인 성공</span>
-                        ${isAdmin ? '<span class="ml-2 font-bold text-red-600">(관리자 기기)</span>' : ''}
+                        ${isAdmin ? '<span class="ml-2 font-bold text-red-600">(관리자 모드 활성화됨)</span>' : ''}
                     `;
                     
                     setupRealtimeListener();
@@ -200,9 +227,9 @@
             loadingIndicator.classList.add('hidden'); // 로딩 숨김
 
             if (!isAdmin) {
-                // 관리자가 아닌 경우, 전체 기록 목록을 표시하지 않고 메시지를 띄웁니다.
-                recordTitle.textContent = "기록 확인";
-                nonAdminMessage.classList.remove('hidden');
+                // 관리자 키를 입력하도록 프롬프트 표시
+                recordTitle.textContent = "기록 확인 (키 필요)";
+                adminKeySection.classList.remove('hidden');
                 submissionsList.classList.add('hidden');
                 noDataMessage.classList.add('hidden');
                 return;
@@ -210,13 +237,13 @@
 
             // 관리자인 경우, 모든 데이터를 가져옵니다.
             recordTitle.textContent = "전체 제출 기록 (관리자 모드)";
-            nonAdminMessage.classList.add('hidden');
+            adminKeySection.classList.add('hidden');
             loadingIndicator.classList.remove('hidden');
 
             const publicCollectionPath = `artifacts/${appId}/public/data/submissions`; 
             const submissionsRef = collection(db, publicCollectionPath);
             
-            // 관리자는 모든 데이터를 쿼리합니다.
+            // 모든 데이터를 쿼리합니다.
             const q = query(submissionsRef);
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -226,7 +253,7 @@
                     submissions.push({ id: doc.id, ...data });
                 });
                 
-                // 데이터 정렬: 최신순 (order(by)를 사용하지 않고 자바스크립트에서 처리)
+                // 데이터 정렬: 최신순 (자바스크립트에서 처리)
                 submissions.sort((a, b) => {
                     const timeA = a.timestamp?.toMillis() || 0;
                     const timeB = b.timestamp?.toMillis() || 0;
@@ -261,19 +288,18 @@
                     hour12: false
                 });
 
-                // 제출자가 관리자 ID 목록 중 하나인지 확인
-                const isSubmittedByAdmin = ADMIN_USER_IDS.includes(submission.userId); 
+                // 제출한 ID가 현재 사용자의 ID와 같으면 '관리자 제출'로 표시 (선택적)
+                const isSubmittedByCurrentUser = submission.userId === userId; 
 
                 const listItem = document.createElement('li');
-                // 관리자가 제출한 기록은 빨간색, 다른 사용자가 제출한 기록은 회색으로 구분합니다.
-                listItem.className = `p-4 rounded-lg transition duration-200 ${isSubmittedByAdmin ? 'admin-record shadow-md' : 'bg-gray-50 border-l-4 border-gray-300'}`;
+                listItem.className = `p-4 rounded-lg transition duration-200 ${isSubmittedByCurrentUser ? 'admin-record shadow-md' : 'bg-gray-50 border-l-4 border-gray-300'}`;
                 listItem.innerHTML = `
                     <p class="text-lg font-semibold text-gray-800">${submission.name || '이름 없음'}</p>
                     <p class="text-sm text-gray-600">학번: <span class="font-mono text-gray-900">${submission.studentId || '학번 없음'}</span></p>
                     <p class="text-sm text-gray-600">전화번호: <span class="font-mono text-gray-900">${submission.phoneNumber || '전화번호 없음'}</span></p>
                     <p class="text-xs text-gray-500 mt-1">
                         입력 시간: ${formattedTime}
-                        ${isSubmittedByAdmin ? '<span class="ml-2 font-medium text-red-600">(관리자 제출 기록)</span>' : ''}
+                        ${isSubmittedByCurrentUser ? '<span class="ml-2 font-medium text-red-600">(이 기기에서 제출)</span>' : ''}
                     </p>
                     <p class="text-xs text-gray-400 mt-0.5">제출자 ID: ${submission.userId || '알 수 없음'}</p>
                 `;
@@ -281,17 +307,17 @@
             });
         }
 
+        // --- 이벤트 리스너 ---
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             if (!isAuthReady || !userId) {
-                displayMessage("인증이 완료되지 않아 제출할 수 없습니다. 잠시 후 다시 시도하거나 오류 메시지를 확인하세요.", false);
+                displayMessage("인증이 완료되지 않아 제출할 수 없습니다.", false);
                 return;
             }
 
-            const studentId = studentIdInput.value.trim();
-            const studentName = studentNameInput.value.trim();
-            const phoneNumber = phoneNumberInput.value.trim();
+            // 입력값 유효성 검사 및 데이터 수집 (생략)
 
             submitButton.disabled = true;
             submitButton.textContent = "저장 중...";
@@ -301,15 +327,14 @@
                 const submissionsRef = collection(db, publicCollectionPath);
 
                 await addDoc(submissionsRef, {
-                    studentId: studentId,
-                    name: studentName,
-                    phoneNumber: phoneNumber,
+                    studentId: studentIdInput.value.trim(),
+                    name: studentNameInput.value.trim(),
+                    phoneNumber: phoneNumberInput.value.trim(),
                     userId: userId, 
                     timestamp: serverTimestamp()
                 });
 
                 displayMessage("기록이 성공적으로 저장되었습니다!", true);
-                // 입력 필드 초기화
                 studentIdInput.value = '';
                 studentNameInput.value = '';
                 phoneNumberInput.value = '';
@@ -320,6 +345,33 @@
             } finally {
                 submitButton.disabled = false;
                 submitButton.textContent = "제출하고 데이터베이스에 저장";
+            }
+        });
+
+        activateAdminButton.addEventListener('click', () => {
+            const enteredKey = adminKeyInput.value.trim();
+            adminKeyMessage.classList.add('hidden');
+
+            if (enteredKey === ADMIN_SECRET_KEY) {
+                // 키가 일치하면 관리자 상태를 sessionStorage에 저장
+                sessionStorage.setItem('isAdminAccess', 'true');
+                
+                // 페이지 새로고침 또는 UI 업데이트
+                isAdmin = true;
+                
+                authInfoDiv.innerHTML = `
+                    현재 사용자 ID (User ID): <span class="font-mono text-blue-600">${userId}</span> 
+                    - <span class="text-green-600">익명 로그인 성공</span>
+                    <span class="ml-2 font-bold text-red-600">(관리자 모드 활성화됨)</span>
+                `;
+                
+                setupRealtimeListener(); // 기록 목록을 불러오도록 재시작
+                adminKeyInput.value = '';
+
+            } else {
+                adminKeyMessage.textContent = "비밀 키가 일치하지 않습니다. 다시 확인해주세요.";
+                adminKeyMessage.classList.remove('hidden');
+                adminKeyInput.focus();
             }
         });
 
