@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>1-2 오락실 키오스크</title>
+    <title>학번, 이름, 전화번호 제출 기록 (관리자 키 시스템)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -96,7 +96,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
-            getFirestore, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel 
+            getFirestore, addDoc, onSnapshot, collection, query, serverTimestamp, setLogLevel, deleteDoc, doc
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // 디버그 로깅 활성화
@@ -117,17 +117,15 @@
         const appId = firebaseConfig.projectId; // keyos-cdd4d
         
         // =========================================================
-        // ✅ [고정 관리자 키] 이 키를 관리자 확인에 사용합니다.
-        // 이 값을 변경하면 모든 관리자 기기에서 이 키를 사용해야 합니다.
+        // ✅ [고정 관리자 키] 사용자 요청에 따라 96121965로 변경되었습니다.
         // =========================================================
-        const ADMIN_SECRET_KEY = "96121965"; // 원하는 비밀번호로 변경하세요
+        const ADMIN_SECRET_KEY = "96121965"; 
         // =========================================================
         
         let db;
         let auth;
         let userId = null;
         let isAuthReady = false;
-        // isAdmin 상태는 이제 Firebase ID가 아닌, sessionStorage 또는 키 입력으로 결정됩니다.
         let isAdmin = false; 
 
         // DOM 요소
@@ -220,6 +218,26 @@
             displaySystemError("Firebase 시스템 초기화에 실패했습니다. Config 값을 확인하세요.", error);
         }
 
+        // Firestore 기록 삭제 처리 함수
+        async function deleteSubmission(docId) {
+            if (!db || !appId) return;
+
+            // 사용자에게 삭제 의도를 확인하는 간단한 메시지를 표시
+            displayMessage(`기록 (${docId.substring(0, 4)}...)을 삭제하는 중입니다.`, false);
+            
+            try {
+                const publicCollectionPath = `artifacts/${appId}/public/data/submissions`;
+                // doc 함수를 사용하여 특정 문서에 대한 참조 생성
+                const docRef = doc(db, publicCollectionPath, docId);
+                
+                await deleteDoc(docRef);
+                displayMessage(`기록 (${docId.substring(0, 4)}...)이 성공적으로 삭제되었습니다.`, true);
+            } catch (error) {
+                console.error("기록 삭제 중 오류 발생:", error);
+                displaySystemError("기록 삭제에 실패했습니다. Firestore 규칙이나 권한을 확인하세요.", error);
+            }
+        }
+
         // Firestore 실시간 데이터 리스너 설정
         function setupRealtimeListener() {
             if (!isAuthReady || !db || !userId) return; 
@@ -279,6 +297,9 @@
 
             submissionsList.classList.remove('hidden');
             noDataMessage.classList.add('hidden');
+            
+            // 삭제 버튼의 리스너를 미리 저장할 배열
+            const deleteListeners = [];
 
             submissions.forEach(submission => {
                 const date = submission.timestamp ? submission.timestamp.toDate() : new Date(0);
@@ -288,23 +309,51 @@
                     hour12: false
                 });
 
-                // 제출한 ID가 현재 사용자의 ID와 같으면 '관리자 제출'로 표시 (선택적)
                 const isSubmittedByCurrentUser = submission.userId === userId; 
+
+                // 관리자에게만 보이는 삭제 버튼 HTML
+                let deleteButtonHtml = '';
+                if (isAdmin) {
+                    deleteButtonHtml = `
+                        <button data-id="${submission.id}" 
+                                class="delete-btn bg-red-500 text-white text-xs font-semibold py-1 px-3 rounded-full hover:bg-red-600 transition duration-150">
+                            기록 삭제
+                        </button>
+                    `;
+                    // 이벤트 리스너 정보를 저장합니다.
+                    deleteListeners.push({ id: submission.id });
+                }
 
                 const listItem = document.createElement('li');
                 listItem.className = `p-4 rounded-lg transition duration-200 ${isSubmittedByCurrentUser ? 'admin-record shadow-md' : 'bg-gray-50 border-l-4 border-gray-300'}`;
                 listItem.innerHTML = `
-                    <p class="text-lg font-semibold text-gray-800">${submission.name || '이름 없음'}</p>
-                    <p class="text-sm text-gray-600">학번: <span class="font-mono text-gray-900">${submission.studentId || '학번 없음'}</span></p>
-                    <p class="text-sm text-gray-600">전화번호: <span class="font-mono text-gray-900">${submission.phoneNumber || '전화번호 없음'}</span></p>
-                    <p class="text-xs text-gray-500 mt-1">
-                        입력 시간: ${formattedTime}
-                        ${isSubmittedByCurrentUser ? '<span class="ml-2 font-medium text-red-600">(이 기기에서 제출)</span>' : ''}
-                    </p>
-                    <p class="text-xs text-gray-400 mt-0.5">제출자 ID: ${submission.userId || '알 수 없음'}</p>
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-lg font-semibold text-gray-800">${submission.name || '이름 없음'}</p>
+                            <p class="text-sm text-gray-600">학번: <span class="font-mono text-gray-900">${submission.studentId || '학번 없음'}</span></p>
+                            <p class="text-sm text-gray-600">전화번호: <span class="font-mono text-gray-900">${submission.phoneNumber || '전화번호 없음'}</span></p>
+                            <p class="text-xs text-gray-500 mt-1">
+                                입력 시간: ${formattedTime}
+                                ${isSubmittedByCurrentUser ? '<span class="ml-2 font-medium text-red-600">(이 기기에서 제출)</span>' : ''}
+                            </p>
+                            <p class="text-xs text-gray-400 mt-0.5">제출자 ID: ${submission.userId || '알 수 없음'}</p>
+                        </div>
+                        ${deleteButtonHtml}
+                    </div>
                 `;
                 submissionsList.appendChild(listItem);
             });
+            
+            // 모든 리스트 아이템이 DOM에 추가된 후, 삭제 버튼 리스너를 한 번에 추가합니다.
+            if (isAdmin) {
+                document.querySelectorAll('.delete-btn').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        // data-id 속성에서 문서 ID를 가져옵니다.
+                        const docId = e.target.getAttribute('data-id');
+                        await deleteSubmission(docId);
+                    });
+                });
+            }
         }
 
         // --- 이벤트 리스너 ---
