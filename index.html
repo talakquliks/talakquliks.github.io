@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>학번, 이름, 전화번호 제출 기록 (관리자 전용)</title>
+    <title>학번, 이름, 전화번호 제출 기록 (멀티 관리자 전용)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -99,9 +99,12 @@
         const appId = firebaseConfig.projectId; // keyos-cdd4d
         
         // =========================================================
-        // ✅ 관리자 ID가 사용자님의 ID로 최종 적용되었습니다.
+        // ✅ [다중 관리자] 모든 관리자 ID 목록입니다.
         // =========================================================
-        const ADMIN_USER_ID = "ZGJ06dwqc2f7HhHqvoeYQjUbgpH2";
+        const ADMIN_USER_IDS = [
+            "ZGJ06dwqc2f7HhHqvoeYQjUbgpH2", // 이전 ID
+            "Yb8pLFuVZChEsUw8Esu4V2sKmql1"  // 새로운 ID
+        ];
         // =========================================================
         
         let db;
@@ -163,8 +166,8 @@
                     submitButton.disabled = false;
                     errorDisplayDiv.classList.add('hidden');
                     
-                    // 관리자 ID 체크
-                    isAdmin = userId === ADMIN_USER_ID;
+                    // 관리자 ID 목록에 현재 사용자 ID가 포함되는지 체크
+                    isAdmin = ADMIN_USER_IDS.includes(userId);
                     
                     authInfoDiv.innerHTML = `
                         현재 사용자 ID (User ID): <span class="font-mono text-blue-600">${userId}</span> 
@@ -258,7 +261,8 @@
                     hour12: false
                 });
 
-                const isSubmittedByAdmin = submission.userId === ADMIN_USER_ID; 
+                // 제출자가 관리자 ID 목록 중 하나인지 확인
+                const isSubmittedByAdmin = ADMIN_USER_IDS.includes(submission.userId); 
 
                 const listItem = document.createElement('li');
                 // 관리자가 제출한 기록은 빨간색, 다른 사용자가 제출한 기록은 회색으로 구분합니다.
