@@ -1,175 +1,265 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, Maximize, Minus, Plus } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>보니보니의 최면사이트</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #fff;
+            font-family: sans-serif;
+            user-select: none;
+        }
 
-const BWHypnosis = () => {
-  const canvasRef = useRef(null);
-  const requestRef = useRef(null);
-  const angleRef = useRef(0);
-  
-  // 상태 관리
-  const [isRunning, setIsRunning] = useState(false);
-  const [speed, setSpeed] = useState(10); // 기본 속도
-  const [showControls, setShowControls] = useState(true);
-  const [direction, setDirection] = useState(1); // 1: 시계방향, -1: 반시계방향
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
 
-  // 애니메이션 루프
-  const animate = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    // 캔버스 크기 설정
-    if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
+        /* 컨트롤 UI 레이아웃 */
+        #ui-layer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            border-top: 2px solid #000;
+            transition: transform 0.4s ease-in-out;
+            z-index: 100;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px 20px 30px 20px;
+        }
 
-    const { width, height } = canvas;
-    const centerX = width / 2;
-    const centerY = height / 2;
-    
-    // 화면 대각선 길이 계산 (나선이 화면을 꽉 채우도록)
-    const maxRadius = Math.sqrt(centerX ** 2 + centerY ** 2) + 50;
+        #ui-layer.hidden {
+            transform: translateY(100%);
+        }
 
-    // 1. 배경: 완전한 흰색
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, width, height);
+        /* 컨트롤 패널 토글 버튼 */
+        #toggle-handle {
+            position: absolute;
+            top: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #000;
+            border-bottom: none;
+            padding: 5px 20px;
+            border-radius: 10px 10px 0 0;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
 
-    ctx.save();
-    ctx.translate(centerX, centerY);
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            max-width: 800px;
+            width: 100%;
+        }
 
-    // 2. 회전 처리
-    if (isRunning) {
-      angleRef.current += (speed * 0.005) * direction;
-    }
-    ctx.rotate(angleRef.current);
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
 
-    // 3. 클래식 흑백 나선 그리기 (Archimedean Spiral)
-    ctx.beginPath();
-    ctx.strokeStyle = '#000000'; // 검은색 선
-    
-    // 선 두께와 간격 설정 (흑백 비율 50:50을 맞추기 위함)
-    const lineThickness = 40; 
-    const gap = lineThickness * 2; 
-    
-    ctx.lineWidth = lineThickness;
-    ctx.lineCap = 'butt'; // 끝부분 뭉툭하게
+        .label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #555;
+            text-transform: uppercase;
+        }
 
-    // 나선 그리기 루프
-    // r = a + b * theta
-    // theta를 증가시키며 나선을 그림
-    const loops = Math.ceil(maxRadius / gap) + 2; // 화면을 채울 만큼의 루프 수
-    const totalAngle = loops * 2 * Math.PI;
-    
-    // 부드러운 곡선을 위해 작은 단위로 그림
-    ctx.moveTo(0, 0);
-    for (let angle = 0; angle <= totalAngle; angle += 0.1) {
-      // 반지름 r은 각도에 비례해서 커짐
-      // gap / (2 * PI) 는 1회전당 늘어나는 반지름 길이
-      const r = (gap / (2 * Math.PI)) * angle;
-      const x = r * Math.cos(angle);
-      const y = r * Math.sin(angle);
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+        button {
+            padding: 10px 20px;
+            background: #000;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
 
-    // 중심부 깔끔하게 처리 (작은 원)
-    ctx.beginPath();
-    ctx.arc(0, 0, lineThickness / 2, 0, Math.PI * 2);
-    ctx.fillStyle = '#000000';
-    ctx.fill();
+        button:active {
+            background: #444;
+        }
 
-    ctx.restore();
+        input[type="range"] {
+            width: 150px;
+            cursor: pointer;
+        }
 
-    requestRef.current = requestAnimationFrame(animate);
-  }, [isRunning, speed, direction]);
+        /* 전체화면 버튼 */
+        #fs-btn {
+            background: transparent;
+            color: #000;
+            border: 2px solid #000;
+        }
 
-  useEffect(() => {
-    requestRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(requestRef.current);
-  }, [animate]);
+        /* 안내 문구 */
+        #hint {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #888;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
 
-  // 전체 화면 토글
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      }
-    }
-  };
+    <div id="hint">화면을 클릭하면 메뉴가 나타납니다</div>
+    <canvas id="hypnoCanvas"></canvas>
 
-  return (
-    <div className="relative w-full h-screen overflow-hidden bg-white text-black font-sans select-none">
-      {/* Canvas Layer */}
-      <canvas 
-        ref={canvasRef} 
-        className="block w-full h-full cursor-none" // 캔버스 위에서 마우스 숨김
-        onClick={() => setShowControls(!showControls)} // 화면 클릭시 컨트롤 토글
-      />
-
-      {/* Control UI (하단 바) */}
-      <div 
-        className={`fixed bottom-0 left-0 w-full transition-all duration-500 ease-in-out ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}
-      >
-        <div className="bg-white/90 backdrop-blur-sm border-t-2 border-black p-4 flex flex-col md:flex-row items-center justify-between gap-4 max-w-4xl mx-auto md:rounded-t-xl md:mb-0 md:border-x-2">
-          
-          {/* Main Controls */}
-          <div className="flex items-center gap-6">
-            <button 
-              onClick={() => setIsRunning(!isRunning)}
-              className="group relative flex items-center justify-center w-14 h-14 bg-black text-white rounded-full hover:scale-105 transition-transform"
-            >
-              {isRunning ? <Pause size={28} fill="white" /> : <Play size={28} fill="white" className="ml-1" />}
-            </button>
-            
-            <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Speed Control</span>
-              <div className="flex items-center gap-3">
-                 <button onClick={() => setSpeed(Math.max(0, speed - 5))} className="p-1 hover:bg-gray-200 rounded"><Minus size={16}/></button>
-                 <input 
-                  type="range" 
-                  min="0" 
-                  max="50" 
-                  step="1"
-                  value={speed}
-                  onChange={(e) => setSpeed(Number(e.target.value))}
-                  className="w-32 md:w-48 h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-black"
-                />
-                <button onClick={() => setSpeed(Math.min(50, speed + 5))} className="p-1 hover:bg-gray-200 rounded"><Plus size={16}/></button>
-              </div>
+    <div id="ui-layer">
+        <div id="toggle-handle">MENU</div>
+        <div class="controls-row">
+            <div class="control-group">
+                <button id="play-btn">START</button>
             </div>
-          </div>
 
-          {/* Secondary Controls */}
-          <div className="flex gap-4">
-             <button 
-              onClick={() => setDirection(d => d * -1)}
-              className="px-4 py-2 border-2 border-black font-bold hover:bg-black hover:text-white transition-colors text-sm uppercase"
-            >
-              {direction === 1 ? '시계 방향' : '반시계 방향'}
-            </button>
-            <button 
-              onClick={toggleFullScreen}
-              className="p-3 border-2 border-black rounded hover:bg-black hover:text-white transition-colors"
-              title="전체 화면"
-            >
-              <Maximize size={20} />
-            </button>
-          </div>
+            <div class="control-group">
+                <span class="label">SPEED</span>
+                <input type="range" id="speed-range" min="0" max="40" value="10">
+            </div>
+
+            <div class="control-group">
+                <span class="label">DIRECTION</span>
+                <button id="dir-btn">시계 방향</button>
+            </div>
+
+            <div class="control-group">
+                <button id="fs-btn">FULLSCREEN</button>
+            </div>
         </div>
-      </div>
-      
-      {/* Hide hint */}
-      {!showControls && isRunning && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-gray-400 text-xs opacity-50 animate-pulse pointer-events-none">
-          화면을 클릭하면 메뉴가 나타납니다
-        </div>
-      )}
     </div>
-  );
-};
 
-export default BWHypnosis;
+    <script>
+        const canvas = document.getElementById('hypnoCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiLayer = document.getElementById('ui-layer');
+        const toggleHandle = document.getElementById('toggle-handle');
+        const playBtn = document.getElementById('play-btn');
+        const speedRange = document.getElementById('speed-range');
+        const dirBtn = document.getElementById('dir-btn');
+        const fsBtn = document.getElementById('fs-btn');
+
+        let isRunning = false;
+        let speed = 10;
+        let direction = 1;
+        let angle = 0;
+
+        // 사이즈 조절
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // 그리기 함수
+        function draw() {
+            const w = canvas.width;
+            const h = canvas.height;
+            const centerX = w / 2;
+            const centerY = h / 2;
+            const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY) + 100;
+
+            // 배경 클리어 (흰색)
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+
+            if (isRunning) {
+                angle += (speed * 0.005) * direction;
+            }
+            ctx.rotate(angle);
+
+            // 나선형 그리기
+            ctx.beginPath();
+            ctx.strokeStyle = '#000';
+            const thickness = 40;
+            const gap = thickness * 2;
+            ctx.lineWidth = thickness;
+            ctx.lineCap = 'butt';
+
+            const loops = Math.ceil(maxRadius / gap) + 2;
+            const totalAngle = loops * 2 * Math.PI;
+
+            ctx.moveTo(0, 0);
+            for (let a = 0; a <= totalAngle; a += 0.1) {
+                const r = (gap / (2 * Math.PI)) * a;
+                const x = r * Math.cos(a);
+                const y = r * Math.sin(a);
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // 중심점 보정
+            ctx.beginPath();
+            ctx.arc(0, 0, thickness / 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+
+            ctx.restore();
+            requestAnimationFrame(draw);
+        }
+
+        // 이벤트 리스너
+        playBtn.addEventListener('click', () => {
+            isRunning = !isRunning;
+            playBtn.textContent = isRunning ? 'STOP' : 'START';
+            playBtn.style.background = isRunning ? '#ff4444' : '#000';
+        });
+
+        speedRange.addEventListener('input', (e) => {
+            speed = parseFloat(e.target.value);
+        });
+
+        dirBtn.addEventListener('click', () => {
+            direction *= -1;
+            dirBtn.textContent = direction === 1 ? '시계 방향' : '반시계 방향';
+        });
+
+        fsBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        // UI 토글
+        toggleHandle.addEventListener('click', (e) => {
+            uiLayer.classList.toggle('hidden');
+            e.stopPropagation();
+        });
+
+        canvas.addEventListener('click', () => {
+            uiLayer.classList.toggle('hidden');
+        });
+
+        // 애니메이션 시작
+        draw();
+    </script>
+</body>
+</html>
 
